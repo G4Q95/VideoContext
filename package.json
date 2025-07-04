@@ -1,6 +1,6 @@
 {
-  "name": "videocontextg4",
-  "version": "0.62.5",
+  "name": "videocontext",
+  "version": "99.0.0",
   "description": "A WebGL & HTML5 graph based video composition library",
   "repository": {
     "type": "git",
