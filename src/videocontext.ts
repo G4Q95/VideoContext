@@ -129,6 +129,12 @@ export default class VideoContext {
     _lastRenderTime: number | undefined;
     _runAfterNextRender: (() => boolean) | undefined;
     /**
+     * Indicates whether the VideoContext instance has already been prepared via `prepare()`.
+     * Preparation performs an internal warm-up (first render pass) without leaving the
+     * PAUSED state so that a subsequent `play()` starts with minimal latency.
+     */
+    _prepared!: boolean;
+    /**
      * Initialise the VideoContext and render to the specific canvas. A 2nd parameter can be passed to the constructor which is a function that get's called if the VideoContext fails to initialise.
      *
      * @param {Canvas} canvas - the canvas element to render the output to.
@@ -209,6 +215,7 @@ export default class VideoContext {
         this._destinationNode = new DestinationNode(this._gl, this._renderGraph);
         this._lastRenderTime = undefined;
         this._runAfterNextRender = undefined;
+        this._prepared = false;
 
         this._callbacks = new Map();
         Object.keys(VideoContext.EVENTS).forEach((name) =>
@@ -544,6 +551,43 @@ export default class VideoContext {
         };
 
         return true;
+    }
+
+    /**
+     * Warm-up the VideoContext rendering pipeline so that a subsequent `play()` call
+     * starts almost instantly. Internally this simply triggers a normal `play()`, waits
+     * for the first "playing" callback (after the initial render pass) and then pauses
+     * the context again. If the context was already prepared earlier it resolves
+     * immediately.
+     *
+     * This mirrors the pre-roll behaviour we previously emulated in application code
+     * (warmStartVC) but lives inside the library for cleaner reuse.
+     *
+     * @returns Promise<void> which resolves once the engine is prepared.
+     */
+    prepare(): Promise<void> {
+        // Already prepared – nothing to do.
+        if (this._prepared) return Promise.resolve();
+
+        // If currently playing, we assume preparation complete.
+        if (this._state === VideoContext.STATE.PLAYING) {
+            this._prepared = true;
+            return Promise.resolve();
+        }
+
+        return new Promise((resolve) => {
+            const onPlaying = () => {
+                // Immediately pause – we only wanted the warm-up render.
+                this.pause();
+                this.unregisterCallback(onPlaying);
+                this._prepared = true;
+                resolve();
+            };
+
+            // Register one-shot callback and kick off play.
+            this.registerCallback(VideoContext.EVENTS.PLAYING, onPlaying);
+            this.play();
+        });
     }
 
     /**
