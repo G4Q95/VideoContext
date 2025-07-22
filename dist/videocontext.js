@@ -2424,6 +2424,8 @@ var MediaNode = /*#__PURE__*/function (_sourcenode_1$default) {
       volume: 1.0
     }, attributes);
     _this._loopElement = false;
+    // Ensure we only perform the initial corrective seek once.
+    _this._hasInitialSeek = false;
     if (_this._attributes.loop) {
       _this._loopElement = _this._attributes.loop;
     }
@@ -2644,6 +2646,29 @@ var MediaNode = /*#__PURE__*/function (_sourcenode_1$default) {
       var triggerTextureUpdate = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : true;
       //if (!super._update(currentTime)) return false;
       _get(_getPrototypeOf(MediaNode.prototype), "_update", this).call(this, currentTime, triggerTextureUpdate);
+      /**
+       * WORKAROUND: VideoContext internally resets `element.currentTime` to 0 on
+       * its very first update tick when the global timeline is at 0s. When we
+       * schedule a media node with a non-zero `sourceOffset` (used for trimmed
+       * playback) this clobbers the intended in-point and results in the video
+       * momentarily flashing the first frame of the *untrimmed* clip before the
+       * correct seek is re-applied – visible as the infamous "rewind-to-0" bug.
+       *
+       * The fix is to explicitly seek the underlying media element to the
+       * configured `sourceOffset` the very first time the node enters the
+       * playing state *while* the VideoContext timeline is still at 0. We then
+       * mark `_hasInitialSeek` so this block never runs again for this node.
+       */
+      if (!this._hasInitialSeek && this._state === sourcenode_1.SOURCENODESTATE.playing && this._element && this._sourceOffset !== 0 && this._currentTime === 0) {
+        try {
+          this._element.currentTime = this._sourceOffset;
+        } catch (e) {
+          // In the (rare) event the assignment fails (e.g. element not
+          // ready), we swallow the error – the normal update loop will
+          // re-apply seeks once data is buffered.
+        }
+        this._hasInitialSeek = true;
+      }
       //check if the media has ended
       if (this._element !== undefined) {
         if (this._element.ended) {
@@ -4878,6 +4903,7 @@ var VideoContext = /*#__PURE__*/function () {
     this._destinationNode = new destinationnode_1["default"](this._gl, this._renderGraph);
     this._lastRenderTime = undefined;
     this._runAfterNextRender = undefined;
+    this._prepared = false;
     this._callbacks = new Map();
     Object.keys(VideoContext.EVENTS).forEach(function (name) {
       return _this._callbacks.set(VideoContext.EVENTS[name], []);
@@ -5262,6 +5288,42 @@ var VideoContext = /*#__PURE__*/function () {
       return true;
     }
     /**
+     * Warm-up the VideoContext rendering pipeline so that a subsequent `play()` call
+     * starts almost instantly. Internally this simply triggers a normal `play()`, waits
+     * for the first "playing" callback (after the initial render pass) and then pauses
+     * the context again. If the context was already prepared earlier it resolves
+     * immediately.
+     *
+     * This mirrors the pre-roll behaviour we previously emulated in application code
+     * (warmStartVC) but lives inside the library for cleaner reuse.
+     *
+     * @returns Promise<void> which resolves once the engine is prepared.
+     */
+  }, {
+    key: "prepare",
+    value: function prepare() {
+      var _this3 = this;
+      // Already prepared – nothing to do.
+      if (this._prepared) return Promise.resolve();
+      // If currently playing, we assume preparation complete.
+      if (this._state === VideoContext.STATE.PLAYING) {
+        this._prepared = true;
+        return Promise.resolve();
+      }
+      return new Promise(function (resolve) {
+        var onPlaying = function onPlaying() {
+          // Immediately pause – we only wanted the warm-up render.
+          _this3.pause();
+          _this3.unregisterCallback(onPlaying);
+          _this3._prepared = true;
+          resolve();
+        };
+        // Register one-shot callback and kick off play.
+        _this3.registerCallback(VideoContext.EVENTS.PLAYING, onPlaying);
+        _this3.play();
+      });
+    }
+    /**
      * Pause playback of the VideoContext
      * @example
      * var canvasElement = document.getElementById("canvas");
@@ -5277,13 +5339,13 @@ var VideoContext = /*#__PURE__*/function () {
   }, {
     key: "pause",
     value: function pause() {
-      var _this3 = this;
+      var _this4 = this;
       if (this._state === VideoContext.STATE.PAUSED || this._state === VideoContext.STATE.SEEKING) return false;
       this._callCallbacks(VideoContext.EVENTS.PAUSE);
       this._state = VideoContext.STATE.PAUSED;
       this._runAfterNextRender = function () {
-        if (_this3._state === VideoContext.STATE.PAUSED) {
-          _this3._callCallbacks(VideoContext.EVENTS.PAUSED);
+        if (_this4._state === VideoContext.STATE.PAUSED) {
+          _this4._callCallbacks(VideoContext.EVENTS.PAUSED);
           return true;
         }
         return false;
@@ -5861,7 +5923,7 @@ var VideoContext = /*#__PURE__*/function () {
   }, {
     key: "reset",
     value: function reset() {
-      var _this4 = this;
+      var _this5 = this;
       var _iterator9 = _createForOfIteratorHelper(this._callbacks),
         _step9;
       try {
@@ -5870,7 +5932,7 @@ var VideoContext = /*#__PURE__*/function () {
           // FIXME: bug
           // this.unregisterCallback(callback);
           callback[1].forEach(function (cb) {
-            return _this4.unregisterCallback(cb);
+            return _this5.unregisterCallback(cb);
           });
         }
       } catch (err) {
@@ -5911,7 +5973,7 @@ var VideoContext = /*#__PURE__*/function () {
       this._playbackRate = 1.0;
       this._sourcesPlaying = undefined;
       Object.keys(VideoContext.EVENTS).forEach(function (name) {
-        return _this4._callbacks.set(VideoContext.EVENTS[name], []);
+        return _this5._callbacks.set(VideoContext.EVENTS[name], []);
       });
       this._timelineCallbacks = [];
       this._lastRenderTime = undefined;

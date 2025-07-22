@@ -14,6 +14,11 @@ declare class MediaNode extends SourceNode {
     _playbackRate: number;
     _attributes: Partial<GetNonFunctionPartialOfType<HTMLMediaElement>>;
     _loopElement: boolean;
+    /**
+     * Internal flag so we only apply the initial seek once per node. The lack of
+     * this guard in upstream VideoContext causes an unexpected rewind-to-zero on
+     * the first rendered frame whenever a non-zero `sourceOffset` is used. */
+    _hasInitialSeek: boolean;
     _element: HTMLVideoElement | HTMLAudioElement | undefined;
     _loadTriggered: boolean | undefined;
     /**

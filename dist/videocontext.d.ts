@@ -107,6 +107,12 @@ export default class VideoContext {
     _lastRenderTime: number | undefined;
     _runAfterNextRender: (() => boolean) | undefined;
     /**
+     * Indicates whether the VideoContext instance has already been prepared via `prepare()`.
+     * Preparation performs an internal warm-up (first render pass) without leaving the
+     * PAUSED state so that a subsequent `play()` starts with minimal latency.
+     */
+    _prepared: boolean;
+    /**
      * Initialise the VideoContext and render to the specific canvas. A 2nd parameter can be passed to the constructor which is a function that get's called if the VideoContext fails to initialise.
      *
      * @param {Canvas} canvas - the canvas element to render the output to.
@@ -321,6 +327,19 @@ export default class VideoContext {
      * ctx.play();
      */
     play(): boolean;
+    /**
+     * Warm-up the VideoContext rendering pipeline so that a subsequent `play()` call
+     * starts almost instantly. Internally this simply triggers a normal `play()`, waits
+     * for the first "playing" callback (after the initial render pass) and then pauses
+     * the context again. If the context was already prepared earlier it resolves
+     * immediately.
+     *
+     * This mirrors the pre-roll behaviour we previously emulated in application code
+     * (warmStartVC) but lives inside the library for cleaner reuse.
+     *
+     * @returns Promise<void> which resolves once the engine is prepared.
+     */
+    prepare(): Promise<void>;
     /**
      * Pause playback of the VideoContext
      * @example

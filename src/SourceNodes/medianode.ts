@@ -20,6 +20,11 @@ class MediaNode extends SourceNode {
     _playbackRate: number;
     _attributes: Partial<GetNonFunctionPartialOfType<HTMLMediaElement>>;
     _loopElement: boolean;
+    /**
+     * Internal flag so we only apply the initial seek once per node. The lack of
+     * this guard in upstream VideoContext causes an unexpected rewind-to-zero on
+     * the first rendered frame whenever a non-zero `sourceOffset` is used. */
+    _hasInitialSeek: boolean;
     _element: HTMLVideoElement | HTMLAudioElement | undefined;
     _loadTriggered: boolean | undefined;
     /**
@@ -46,6 +51,8 @@ class MediaNode extends SourceNode {
         this._playbackRateUpdated = true;
         this._attributes = Object.assign({ volume: 1.0 }, attributes);
         this._loopElement = false;
+        // Ensure we only perform the initial corrective seek once.
+        this._hasInitialSeek = false;
         if (this._attributes.loop) {
             this._loopElement = this._attributes.loop;
         }
@@ -281,6 +288,36 @@ class MediaNode extends SourceNode {
     _update(currentTime: number, triggerTextureUpdate = true): boolean | void {
         //if (!super._update(currentTime)) return false;
         super._update(currentTime, triggerTextureUpdate);
+
+        /**
+         * WORKAROUND: VideoContext internally resets `element.currentTime` to 0 on
+         * its very first update tick when the global timeline is at 0s. When we
+         * schedule a media node with a non-zero `sourceOffset` (used for trimmed
+         * playback) this clobbers the intended in-point and results in the video
+         * momentarily flashing the first frame of the *untrimmed* clip before the
+         * correct seek is re-applied – visible as the infamous "rewind-to-0" bug.
+         *
+         * The fix is to explicitly seek the underlying media element to the
+         * configured `sourceOffset` the very first time the node enters the
+         * playing state *while* the VideoContext timeline is still at 0. We then
+         * mark `_hasInitialSeek` so this block never runs again for this node.
+         */
+        if (
+            !this._hasInitialSeek &&
+            this._state === SOURCENODESTATE.playing &&
+            this._element &&
+            this._sourceOffset !== 0 &&
+            this._currentTime === 0
+        ) {
+            try {
+                this._element.currentTime = this._sourceOffset;
+            } catch (e) {
+                // In the (rare) event the assignment fails (e.g. element not
+                // ready), we swallow the error – the normal update loop will
+                // re-apply seeks once data is buffered.
+            }
+            this._hasInitialSeek = true;
+        }
         //check if the media has ended
         if (this._element !== undefined) {
             if (this._element.ended) {
