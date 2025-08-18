@@ -38,6 +38,19 @@ declare class MediaNode extends SourceNode {
      */
     get _buffering(): boolean;
     set volume(volume: number);
+    /**
+     * Expose the underlying HTMLMediaElement so external code (e.g. Auto Shorts)
+     * can inspect or attach additional Web-Audio nodes for debugging or metering.
+     * Read-only: modifying the element is at the caller’s own risk.
+     */
+    get mediaElement(): HTMLMediaElement | undefined;
+    /**
+     * Expose the MediaElementAudioSourceNode that VideoContext creates
+     * internally when the node enters the render graph.  This allows
+     * downstream code to connect analysers or filters without duplicating
+     * the audio element.
+     */
+    get sourceNode(): MediaElementAudioSourceNode | undefined;
     _triggerLoad(): void;
     /**
      * _load has two functions:

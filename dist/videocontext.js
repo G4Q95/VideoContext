@@ -2488,6 +2488,27 @@ var MediaNode = /*#__PURE__*/function (_sourcenode_1$default) {
       this._attributes.volume = volume;
       if (this._element !== undefined) this._element.volume = this._attributes.volume;
     }
+    /**
+     * Expose the underlying HTMLMediaElement so external code (e.g. Auto Shorts)
+     * can inspect or attach additional Web-Audio nodes for debugging or metering.
+     * Read-only: modifying the element is at the caller’s own risk.
+     */
+  }, {
+    key: "mediaElement",
+    get: function get() {
+      return this._element;
+    }
+    /**
+     * Expose the MediaElementAudioSourceNode that VideoContext creates
+     * internally when the node enters the render graph.  This allows
+     * downstream code to connect analysers or filters without duplicating
+     * the audio element.
+     */
+  }, {
+    key: "sourceNode",
+    get: function get() {
+      return this._sourceNode;
+    }
   }, {
     key: "_triggerLoad",
     value: function _triggerLoad() {

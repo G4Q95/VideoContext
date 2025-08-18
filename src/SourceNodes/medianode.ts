@@ -118,6 +118,25 @@ class MediaNode extends SourceNode {
         if (this._element !== undefined) this._element.volume = this._attributes.volume;
     }
 
+    /**
+     * Expose the underlying HTMLMediaElement so external code (e.g. Auto Shorts)
+     * can inspect or attach additional Web-Audio nodes for debugging or metering.
+     * Read-only: modifying the element is at the caller’s own risk.
+     */
+    public get mediaElement(): HTMLMediaElement | undefined {
+        return this._element;
+    }
+
+    /**
+     * Expose the MediaElementAudioSourceNode that VideoContext creates
+     * internally when the node enters the render graph.  This allows
+     * downstream code to connect analysers or filters without duplicating
+     * the audio element.
+     */
+    public get sourceNode(): MediaElementAudioSourceNode | undefined {
+        return (this as any)._sourceNode;
+    }
+
     _triggerLoad() {
         // If the user hasn't supplied an element, videocontext is responsible for the element
         if (this._isResponsibleForElementLifeCycle) {
