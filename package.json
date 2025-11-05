@@ -52,7 +52,8 @@
     "postversion": "git push -u origin HEAD --follow-tags"
   },
   "dependencies": {
-    "regenerator-runtime": "^0.11.1"
+    "regenerator-runtime": "^0.11.1",
+    "mp4box": "^0.5.2"
   },
   "devDependencies": {
     "@babel/core": "^7.21.3",
